@@ -1,5 +1,15 @@
-#include <signal.h>
+#include "data_structure.h"
+#include "functions.h"
+
+#include <stdlib.h>
 #include <stdio.h>
+#include <signal.h>
+
+TriPoint* triPoints = NULL;
+int nbTriPoints = 0;
+
+TriCenter* triCenters = NULL;
+int nbTriCenters = 0;
 
 void onInterrupt2(int sig) {
 	printf("Second alarm received\n");
@@ -13,6 +23,8 @@ void onInterrupt(int sig) {
 }
 
 int main(int argc, char* argv[]) {
+	srand(time(NULL)); //DO NOT DELETE
+	
 	signal(SIGALRM, onInterrupt);
 	
 	alarm(5);
