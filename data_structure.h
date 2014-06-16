@@ -7,7 +7,8 @@
 typedef enum trashtype {
 	WASTE,
 	GLASS,
-	PAPER
+	PAPER,
+	ANY
 } TrashType;
 
 typedef enum mode {
@@ -37,7 +38,7 @@ typedef struct tripoint {
 	//currently unused
 	int nbBins;
 	
-	TrashBag* free;
+	TrashBin* free;
 	//currently unused
 	int nbFree;
 	
@@ -46,9 +47,8 @@ typedef struct tripoint {
 	int mutex;
 } TriPoint;
 
-typedef struct tricenter {
-//TODO struct?
-	struct Truck* trucks;
+typedef struct triCenter {
+	struct truck* trucks;
 	int nbTrucks;
 	
 	int period;
@@ -60,9 +60,15 @@ typedef struct tricenter {
 
 typedef struct truck {
 	double volume;
-	TriCenter* center;
-	TriPoint* triPoints;
+	
+	struct triCenter* center;
+	
+	TriPoint** triPoints;
 	int nbTriPoint;
+	
+	int x, y;
+	
+	int mutex;
 } Truck;
 
 typedef struct client {
@@ -80,12 +86,13 @@ typedef struct client {
 } Client;
 
 //Global lists with their size
-//TODO Pointer of pointers?
 extern TriPoint* triPoints;
 extern int nbTriPoints;
+extern int mutexTriPoints;
 
 extern TriCenter* triCenters;
 extern int nbTriCenters;
+
 
 #define VOLUME_ALERT 0.8
 
