@@ -19,7 +19,7 @@ void wake_up_truck(Truck* truck);
 void* thread_client(void* data);
 void* thread_tri_center(void* data);
 
-TriPoint findClosestTriPoint(int x, int y);
+TriPoint* findClosestTriPoint(int x, int y);
 
 void add_tri_point_to_truck(TriPoint* point, Truck* truck);
 int compute_distance_squared_Truck_TriPoint(Truck* truck, TriPoint* point);

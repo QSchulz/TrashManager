@@ -3,7 +3,7 @@
 CXX=gcc 
 CFLAGS=-g -c
 LFLAGS=-g -o 
-AUXLIBS=-lm #-pthread
+AUXLIBS=-lm -pthread
 
 TARGET=lo41
 SRCFILE=main.c functions.c

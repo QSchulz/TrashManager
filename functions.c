@@ -2,9 +2,10 @@
 #include "functions.h"
 #include <math.h>
 
-/**TODO Gestion/envois des signaux
-   création des threads
-   variation du nombre de clients
+/**TODO
+   création des threads TODO Trucks?
+   suppression des IPC (V)
+   file de messages entre TriPoint et TriCenter TODO Donut
 */
 
 Client create_client(int x, int y){
@@ -18,8 +19,11 @@ Client create_client(int x, int y){
 	client.x = x;
 	client.y = y;		
 	
-	client.point = (TriPoint*) malloc(sizeof(TriPoint));
-	*(client.point) = findClosestTriPoint(x, y);
+	//TODO Pointers?
+//	client.point = (TriPoint*) malloc(sizeof(TriPoint));
+//	*(client.point) = findClosestTriPoint(x, y);
+	
+	client.point = findClosestTriPoint(x, y);
 	
 	client.nbPerson = rand()%5+1; //Randomize the number of persons in the family
 	
@@ -63,6 +67,8 @@ TriPoint create_tri_point(int x, int y) {
 // Create a tri center
 TriCenter create_tri_center(int nbTrucks, int period, int x, int y, TriPoint* triPoints, int nbTriPoint) {
 	TriCenter center;
+	
+	//TODO Redo with parameter Truck* trucks
 	center.trucks = (Truck*) malloc(sizeof(Truck) * nbTrucks);
 	center.nbTrucks = nbTrucks;
 	
@@ -113,7 +119,7 @@ void put_trash_bag(Client* client){
 		pthread_mutex_lock(&bins[i].mutex);
 		if (bins[i].volume_max_trash_bag >= client->trash->volume &&
 			bins[i].current_volume + client->trash->volume <= bins[i].volume
-				&& bins[i].type == client->trash->type
+				&& (bins[i].type == client->trash->type || (bins[i].type == BAC && client->mode == KEY_BAC && client->trash->volume == 30) || (bins[i].type == KEY && client->mode == KEY_BAC && client->trash->volume != 30))
 				)
 			break;
 		pthread_mutex_unlock(&bins[i].mutex);
@@ -122,15 +128,16 @@ void put_trash_bag(Client* client){
 	if (i<nbBins){
 		bins[i].current_volume += client->trash->volume;
 		pthread_mutex_unlock(&bins[i].mutex);
+		if (bins[i].volume * VOLUME_ALERT <= bins[i].current_volume)
+			//TODO Send signal to its TriPoint
+			client->point;
 	}
 	else{
 		pthread_mutex_lock(&client->point->free.mutex);
 		client->point->free.volume += client->trash->volume;
-		pthread_mutex_unlock(&client->point->free.mutex);	
+		pthread_mutex_unlock(&client->point->free.mutex);
+		//TODO send signal	
 	}
-	if (bins->volume * VOLUME_ALERT <= bins->current_volume)
-		//TODO Send signal to its TriPoint
-		client->point;
 }	
 
 TrashBag generate_trash(Client* client){
@@ -224,11 +231,19 @@ void *thread_client(void* data){
 		sleep(client->period);
 	}
 }
+/*
+void onAlarm(int sig){
+	send_truck(triCenter);
+	alarm(
+	
+}*/
 
 void* thread_tri_center(void* data){
 	TriCenter* triCenter = (TriCenter*) data;
 	time_t currentTime;
 	time_t start;
+	//signal(SIGALRM, onAlarm);
+	//alarm(triCenter->period);
 	while(1){
 		currentTime = 0;
 		start = time(NULL);
@@ -241,7 +256,7 @@ void* thread_tri_center(void* data){
 	}
 }
 
-TriPoint findClosestTriPoint(int x, int y){
+TriPoint* findClosestTriPoint(int x, int y){
 	int i=0, index=-1;
 	float min_distance = -1, distance;
 	for (; i<nbTriPoints; i++)
@@ -258,7 +273,7 @@ TriPoint findClosestTriPoint(int x, int y){
 			index = i;
 		}
 	}	
-	return triPoints[index];
+	return &triPoints[index];
 }
 
 
