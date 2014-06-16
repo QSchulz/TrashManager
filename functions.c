@@ -22,16 +22,6 @@ Client create_client(int x, int y){
 	return client;
 }
 
-//Currently unused
-TrashBag create_trash_bag(double volume, TrashType type){
-	TrashBag trashBag;
-	
-	trashBag.volume = volume;
-	trashBag.type = type;
-	
-	return trashBag;
-}
-
 TrashBin create_trash_bin(double volume, double volume_max_trash_bag, TrashType type){
 	TrashBin trashBin;
 	
@@ -39,43 +29,71 @@ TrashBin create_trash_bin(double volume, double volume_max_trash_bag, TrashType 
 	trashBin.volume_max_trash_bag = volume_max_trash_bag;
 	trashBin.type = type;
 	
+	pthread_mutex_init(&trashBin.mutex, NULL);
+	
 	return trashBin;
 }	
 
-TriPoint create_tri_point(int x, int y);
+TriPoint create_tri_point(int x, int y){
+	TriPoint triPoint;
+	pthread_mutex_init(&triPoint.mutex, NULL);
+	//TODO
+}
 TriCenter create_tri_center(int nbTrucks, int period, int x, int y, TriPoint* triPoints, int nbTriPoint);
 
 Truck create_truck(double volume, TriCenter* center) {
 	Truck truck;
+	
 	truck.volume = volume;
+	
 	truck.center = center;
 	truck.triPoints = NULL;
+	
 	truck.x = center->x;
 	truck.y = center->y;
-	truck.mutex = 1;
+	
+	pthread_mutex_init(&truck.mutex, NULL);
+
 	return truck;
 }
 
 void put_trash_bag(Client* client){
-	//TODO Mutex?
-	//TODO try to find one bin amongst all that has enough remainding volume
+	int i=0;
+	pthread_mutex_lock(&client->point->mutex);
+	int nbBins=client->point->nbBins;
 	TrashBin* bins = client->point->bins;
-	if (bins->volume_max_trash_bag >= client->trash->volume &&
-			bins->current_volume + client->trash->volume <= bins->volume
-//				&& bins->type == client->trash->type
+	pthread_mutex_unlock(&client->point->mutex);
+	
+	while (i<nbBins){
+		pthread_mutex_lock(&bins[i].mutex);
+		if (bins[i].volume_max_trash_bag >= client->trash->volume &&
+			bins[i].current_volume + client->trash->volume <= bins[i].volume
+				&& bins[i].type == client->trash->type
 				)
-		bins->current_volume += client->trash->volume;
+			break;
+		pthread_mutex_unlock(&bins[i].mutex);
+		i++;
+	}
+	if (i<nbBins){
+		bins[i].current_volume += client->trash->volume;
+		pthread_mutex_unlock(&bins[i].mutex);
+	}
+	else{
+		pthread_mutex_lock(&client->point->free->mutex);
+		client->point->free->volume += client->trash->volume;
+		pthread_mutex_unlock(&client->point->free->mutex);	
+	}
 	if (bins->volume * VOLUME_ALERT <= bins->current_volume)
-		//Send signal to its TriPoint
+		//TODO Send signal to its TriPoint
 		client->point;
 }	
 
 TrashBag generate_trash(Client* client){
 	TrashBag trashBag;
+	trashBag.type = rand()%3; //Avoid "ANY" type of wastes
 	if (client->mode == BAC)
 		trashBag.volume = 30;
-	else{
-		//TODO Randomize on KEY_BAC?
+	else if (client->mode == KEY){
 		switch(client->nbPerson){
 			case 1:
 				trashBag.volume = 80;
@@ -92,11 +110,32 @@ TrashBag generate_trash(Client* client){
 				break;
 		}
 	}
+	else{
+		if (rand()%2 == 0)
+			trashBag.volume = 30;
+		else{
+			switch(client->nbPerson){
+				case 1:
+					trashBag.volume = 80;
+					break;
+				case 2:
+					trashBag.volume = 120;
+					break;
+				case 3:
+				case 4:
+					trashBag.volume = 180;
+					break;
+				default:
+					trashBag.volume = 240;
+					break;
+			}	
+		}
+	}
 	return trashBag;
 }
 
 void send_truck(TriCenter* center){
-
+	
 }
 
 void wake_up_truck(Truck* truck){
@@ -128,11 +167,9 @@ void* thread_tri_center(void* data){
 	}
 }
 
-//TODO Don't we have to return a pointer?
 TriPoint findClosestTriPoint(int x, int y){
 	int i=0, index=-1;
 	float min_distance = -1, distance;
-	//TODO Mutex?
 	for (; i<nbTriPoints; i++)
 	{
 		distance = compute_distance_squared(x, y, triPoints[i].x, triPoints[i].y);
@@ -147,17 +184,16 @@ TriPoint findClosestTriPoint(int x, int y){
 			index = i;
 		}
 	}	
-	//TODO Check if index is not -1 ???
 	return triPoints[index];
 }
 
 
 // Add a tri point to the specified truck rout (thread safe)
 void add_tri_point_to_truck(TriPoint* point, Truck* truck) {
-	P(truck->mutex);
+	pthread_mutex_lock(&truck->mutex);
 	truck->triPoints[truck->nbTriPoint] = point;
 	truck->nbTriPoint++;
-	V(truck->mutex);
+	pthread_mutex_unlock(&truck->mutex);
 }
 
 // Compute the square of the distance between a truck and a tri point (not thread safe)
@@ -180,7 +216,7 @@ int find_closest_truck_from_tri_point(TriCenter* center, TriPoint* point) {
 	
 	// Locking each trucks
 	for(i = 0 ; i<center->nbTrucks ; ++i) {
-		P(center->trucks[i].mutex);
+		pthread_mutex_lock(&center->trucks[i].mutex);
 	}
 	
 	int index = 0;
@@ -194,7 +230,7 @@ int find_closest_truck_from_tri_point(TriCenter* center, TriPoint* point) {
 		}
 		
 		// Unlocking the truck as soon as possible
-		V(center->trucks[i].mutex);
+		pthread_mutex_unlock(&center->trucks[i].mutex);
 	}
 	
 	return index;
@@ -210,7 +246,6 @@ void signal_tri_point_full(TriCenter* center, TriPoint* point) {
 	if(truck->nbTriPoint == 0) {
 		add_tri_point_to_truck(point, &center->trucks[truck_index]);
 		// Waking the truck
-		// TODO : How to wake up a thread ?
 		wake_up_truck(truck);
 	} else {
 		add_tri_point_to_truck(point, &center->trucks[truck_index]);
@@ -228,17 +263,17 @@ void* thread_truck(void* data) {
 		for(i = 0 ; i<truck->nbTriPoint ; ++i) {
 			
 			// We lock the truck for the time of this treatment 
-			P(truck->mutex);
+			pthread_mutex_lock(&truck->mutex);
 			TriPoint* point = truck->triPoints[i];
 			
 			int startx = truck->x;
 			int starty = truck->y;
 			
 			// We take the position of the tri point, stock in temporary variable to release the point
-			P(point->mutex);
+			pthread_mutex_lock(&point->mutex);
 			int destx = point->x;
 			int desty = point->y;
-			V(point->mutex);
+			pthread_mutex_unlock(&point->mutex);
 			
 			// Get the length of the travel in meters
 			int travel_length = sqrt( (destx - startx) * (destx - startx) + (desty - starty) * (desty - starty) );
@@ -246,34 +281,34 @@ void* thread_truck(void* data) {
 			travel_length = travel_length / 8;
 			
 			// Release the truck
-			V(truck->mutex);
+			pthread_mutex_unlock(&truck->mutex);
 			
 			// posing the truck for the time of the travel
 			sleep(travel_length);
 			
 			// Once arrived we lock again the truck
-			P(truck->mutex);
+			pthread_mutex_lock(&truck->mutex);
 			
 			// Updating the position
 			truck->x = destx;
 			truck->y = desty;
 			
 			// We lock the bin
-			P(point->mutex);
+			pthread_mutex_lock(&point->mutex);
 			
 			// Emptying each trash bin
 			int j;
 			for(j = 0 ; j<point->nbBins ; ++j) {
-				P(point->bins[j].mutex);
+				pthread_mutex_lock(&point->bins[j].mutex);
 				point->bins[j].current_volume = 0;
-				V(point->bins[j].mutex);
+				pthread_mutex_unlock(&point->bins[j].mutex);
 			}
 			
 			//Deleting illegal trashes.
 			point->free->current_volume = 0;
 			
 			// Releasing the tri point
-			V(point->mutex);
+			pthread_mutex_unlock(&point->mutex);
 			
 			
 		}

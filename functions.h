@@ -5,7 +5,6 @@
 
 Client create_client(int x, int y);
 
-TrashBag create_trash_bag(double volume, TrashType type);
 TrashBin create_trash_bin(double volume, double volume_max_trash_bag, TrashType type);
 
 TriPoint create_tri_point(int x, int y);

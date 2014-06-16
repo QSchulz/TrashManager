@@ -3,7 +3,6 @@
 
 #include <stdlib.h>
 
-//Currently unused
 typedef enum trashtype {
 	WASTE,
 	GLASS,
@@ -19,7 +18,7 @@ typedef enum mode {
 
 typedef struct trashbag {
 	double volume;
-	//currently unused
+
 	TrashType type;
 } TrashBag;
 
@@ -27,24 +26,25 @@ typedef struct trashbin {
 	double volume;
 	double volume_max_trash_bag;
 	double current_volume;
-	//currenlty unused
+
 	TrashType type;
+	Mode mode;
 	
-	int mutex;
+	pthread_mutex_t mutex;
+	pthread_cond_t cond;
 } TrashBin;
 
 typedef struct tripoint {
 	TrashBin* bins;
-	//currently unused
+
 	int nbBins;
 	
 	TrashBin* free;
-	//currently unused
-	int nbFree;
 	
 	int x, y;
 	
-	int mutex;
+	pthread_mutex_t mutex;
+	pthread_cond_t cond;
 } TriPoint;
 
 typedef struct triCenter {
@@ -68,12 +68,13 @@ typedef struct truck {
 	
 	int x, y;
 	
-	int mutex;
+	pthread_mutex_t mutex;
+	pthread_cond_t cond;
 } Truck;
 
 typedef struct client {
 	Mode mode;
-	//Pointer really needed? Each client has a different trash :)
+
 	TrashBag* trash;
 	//currently unused
 	int nbTrash;
@@ -88,7 +89,8 @@ typedef struct client {
 //Global lists with their size
 extern TriPoint* triPoints;
 extern int nbTriPoints;
-extern int mutexTriPoints;
+extern pthread_mutex_t mutexTriPoints;
+extern pthread_cond_t condTriPoints;
 
 extern TriCenter* triCenters;
 extern int nbTriCenters;

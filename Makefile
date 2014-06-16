@@ -36,4 +36,5 @@ clean:
 	@echo "> Cleaning directories"
 	@find ./ -type f -name "*.o" -exec rm -rf {} \;
 	@find ./ -type f -name "*.swp" -exec rm -rf {} \;
+	@find ./ -type f -name "*~" -exec rm -rf {} \;
 	@rm ./$(TARGET)
