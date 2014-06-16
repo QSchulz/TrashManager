@@ -45,6 +45,9 @@ typedef struct tripoint {
 	
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
+	
+	//Used for notifications
+	pthread_t tid_TriCenter;
 } TriPoint;
 
 typedef struct triCenter {
@@ -75,9 +78,7 @@ typedef struct truck {
 typedef struct client {
 	Mode mode;
 
-	TrashBag* trash;
-	//currently unused
-	int nbTrash;
+	TrashBag trash;
 	int x, y;
 	TriPoint* point;
 	
@@ -89,8 +90,6 @@ typedef struct client {
 //Global lists with their size
 extern TriPoint* triPoints;
 extern int nbTriPoints;
-extern pthread_mutex_t mutexTriPoints;
-extern pthread_cond_t condTriPoints;
 
 extern TriCenter* triCenters;
 extern int nbTriCenters;

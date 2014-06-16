@@ -3,9 +3,9 @@
 #include <math.h>
 
 /**TODO
-   création des threads TODO Trucks?
    suppression des IPC (V)
-   file de messages entre TriPoint et TriCenter TODO Donut
+   file de messages + signal (à revoir et à discuter, pas très pratique :/) pour notification entre TriPoint et TriCenter TODO Donut
+   vérifier toutes les X secondes le remplissage des poubelles appartenant à un TriPoint TODO Donut
 */
 
 Client create_client(int x, int y){
@@ -13,15 +13,8 @@ Client create_client(int x, int y){
 	
 	client.mode = rand()%3; //Choose a random enum value for the mode
 	
-	client.trash = (TrashBag*) malloc(sizeof(TrashBag));
-	client.nbTrash = 0;
-	
 	client.x = x;
 	client.y = y;		
-	
-	//TODO Pointers?
-//	client.point = (TriPoint*) malloc(sizeof(TriPoint));
-//	*(client.point) = findClosestTriPoint(x, y);
 	
 	client.point = findClosestTriPoint(x, y);
 	
@@ -45,6 +38,7 @@ TrashBin create_trash_bin(double volume, double volume_max_trash_bag, TrashType 
 
 TriPoint create_tri_point(int x, int y) {
 	TriPoint point;
+	
 	point.bins = (TrashBin*) malloc(sizeof(TrashBin) * 4);
 	point.nbBins = 4;
 	
@@ -64,23 +58,23 @@ TriPoint create_tri_point(int x, int y) {
 	
 	return point;
 }
+
+void setTID(TriPoint* point, pthread_t tid_TriCenter){
+	point->tid_TriCenter = tid_TriCenter;
+}
+
+void setTriCenter(Truck* truck, TriCenter* center){
+		truck->center = center;
+		truck->x = center->x;
+		truck->y = center->y;
+}
+
 // Create a tri center
-TriCenter create_tri_center(int nbTrucks, int period, int x, int y, TriPoint* triPoints, int nbTriPoint) {
+TriCenter create_tri_center(Truck* trucks, int nbTrucks, int period, int x, int y, TriPoint* triPoints, int nbTriPoint) {
 	TriCenter center;
 	
-	//TODO Redo with parameter Truck* trucks
-	center.trucks = (Truck*) malloc(sizeof(Truck) * nbTrucks);
+	center.trucks = trucks;
 	center.nbTrucks = nbTrucks;
-	
-	int i;
-	
-	// ********** ALLOCATION PROBLEM HERE *************
-	// The trucks will probably be destroy near the end of the for loop
-	// Should modify create_truck to return a pointer and doing a malloc
-	// OR modify create_tri_center to return a pointer, should work either way
-	for( i = 0 ; i < nbTrucks ; ++i) {
-		center.trucks[i] = create_truck(TRUCK_VOLUME, &center);
-	}
 	
 	center.period = period;
 	center.x = x;
@@ -91,16 +85,12 @@ TriCenter create_tri_center(int nbTrucks, int period, int x, int y, TriPoint* tr
 	
 }
 
-Truck create_truck(double volume, TriCenter* center) {
+Truck create_truck(double volume) {
 	Truck truck;
 	
 	truck.volume = volume;
 	
-	truck.center = center;
 	truck.triPoints = NULL;
-	
-	truck.x = center->x;
-	truck.y = center->y;
 	
 	pthread_mutex_init(&truck.mutex, NULL);
 	pthread_cond_init(&truck.cond, NULL);
@@ -117,26 +107,22 @@ void put_trash_bag(Client* client){
 	
 	while (i<nbBins){
 		pthread_mutex_lock(&bins[i].mutex);
-		if (bins[i].volume_max_trash_bag >= client->trash->volume &&
-			bins[i].current_volume + client->trash->volume <= bins[i].volume
-				&& (bins[i].type == client->trash->type || (bins[i].type == BAC && client->mode == KEY_BAC && client->trash->volume == 30) || (bins[i].type == KEY && client->mode == KEY_BAC && client->trash->volume != 30))
+		if (bins[i].volume_max_trash_bag >= client->trash.volume &&
+			bins[i].current_volume + client->trash.volume <= bins[i].volume
+				&& (bins[i].type == client->trash.type || (bins[i].type == BAC && client->mode == KEY_BAC && client->trash.volume == 30) || (bins[i].type == KEY && client->mode == KEY_BAC && client->trash.volume != 30))
 				)
 			break;
 		pthread_mutex_unlock(&bins[i].mutex);
 		i++;
 	}
 	if (i<nbBins){
-		bins[i].current_volume += client->trash->volume;
+		bins[i].current_volume += client->trash.volume;
 		pthread_mutex_unlock(&bins[i].mutex);
-		if (bins[i].volume * VOLUME_ALERT <= bins[i].current_volume)
-			//TODO Send signal to its TriPoint
-			client->point;
 	}
 	else{
 		pthread_mutex_lock(&client->point->free.mutex);
-		client->point->free.volume += client->trash->volume;
+		client->point->free.volume += client->trash.volume;
 		pthread_mutex_unlock(&client->point->free.mutex);
-		//TODO send signal	
 	}
 }	
 
@@ -226,7 +212,7 @@ void wake_up_truck(Truck* truck){
 void *thread_client(void* data){
 	Client* client = (Client*) data;
 	while(1){
-		*(client->trash) = generate_trash(client);
+		client->trash = generate_trash(client);
 		put_trash_bag(client);
 		sleep(client->period);
 	}
@@ -242,7 +228,8 @@ void* thread_tri_center(void* data){
 	TriCenter* triCenter = (TriCenter*) data;
 	time_t currentTime;
 	time_t start;
-	//signal(SIGALRM, onAlarm);
+	//TODO Donut
+	//signal(SIGUSR1, checkMessages);
 	//alarm(triCenter->period);
 	while(1){
 		currentTime = 0;
@@ -254,6 +241,16 @@ void* thread_tri_center(void* data){
 		}while((int)(currentTime / triCenter->period) == 0);
 		send_truck(triCenter);
 	}
+}
+
+void* thread_tri_point(void* data){
+	//TriPoint* triPoint = (TriPoint*) data;
+	//TODO Donut
+	//if (bins[i].volume * VOLUME_ALERT <= bins[i].current_volume){}
+			//TODO Send signal to its TriCenter
+			//Une poubelle est pleine
+	//des ordures illégales sont déposées
+	//pthread_kill(triPoint->pid_TriCenter, SIGUSR1);		
 }
 
 TriPoint* findClosestTriPoint(int x, int y){
