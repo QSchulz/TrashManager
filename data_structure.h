@@ -39,7 +39,7 @@ typedef struct tripoint {
 
 	int nbBins;
 	
-	TrashBin* free;
+	TrashBin free;
 	
 	int x, y;
 	
@@ -55,7 +55,7 @@ typedef struct triCenter {
 	int x, y;
 	
 	TriPoint* triPoints;
-	int nbTriPoint;
+	int nbTriPoints;
 } TriCenter;
 
 typedef struct truck {
@@ -64,7 +64,7 @@ typedef struct truck {
 	struct triCenter* center;
 	
 	TriPoint** triPoints;
-	int nbTriPoint;
+	int nbTriPoints;
 	
 	int x, y;
 	
@@ -97,6 +97,9 @@ extern int nbTriCenters;
 
 
 #define VOLUME_ALERT 0.8
+#define TRASH_BIN_VOLUME 5000
+#define TRASH_BIN_FREE_VOLUME 10000
+#define TRUCK_VOLUME 100000
 
 
 #endif

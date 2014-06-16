@@ -2,6 +2,11 @@
 #include "functions.h"
 #include <math.h>
 
+/**TODO Gestion/envois des signaux
+   création des threads
+   variation du nombre de clients
+*/
+
 Client create_client(int x, int y){
 	Client client;
 	
@@ -34,12 +39,51 @@ TrashBin create_trash_bin(double volume, double volume_max_trash_bag, TrashType 
 	return trashBin;
 }	
 
-TriPoint create_tri_point(int x, int y){
-	TriPoint triPoint;
-	pthread_mutex_init(&triPoint.mutex, NULL);
-	//TODO
+TriPoint create_tri_point(int x, int y) {
+	TriPoint point;
+	point.bins = (TrashBin*) malloc(sizeof(TrashBin) * 4);
+	point.nbBins = 4;
+	
+	// Creating each trash bins
+	point.bins[0] = create_trash_bin(TRASH_BIN_VOLUME, 240, WASTE);
+	point.bins[1] = create_trash_bin(TRASH_BIN_VOLUME, 240, GLASS);
+	point.bins[2] = create_trash_bin(TRASH_BIN_VOLUME, 240, PAPER);
+	point.bins[3] = create_trash_bin(TRASH_BIN_VOLUME, 240, WASTE);
+	
+	pthread_mutex_init(&point.mutex, NULL);
+	
+	point.free = create_trash_bin(TRASH_BIN_FREE_VOLUME, 99999, ANY);
+	
+	// Updating the position
+	point.x = x;
+	point.y = y;
+	
+	return point;
 }
-TriCenter create_tri_center(int nbTrucks, int period, int x, int y, TriPoint* triPoints, int nbTriPoint);
+// Create a tri center
+TriCenter create_tri_center(int nbTrucks, int period, int x, int y, TriPoint* triPoints, int nbTriPoint) {
+	TriCenter center;
+	center.trucks = (Truck*) malloc(sizeof(Truck) * nbTrucks);
+	center.nbTrucks = nbTrucks;
+	
+	int i;
+	
+	// ********** ALLOCATION PROBLEM HERE *************
+	// The trucks will probably be destroy near the end of the for loop
+	// Should modify create_truck to return a pointer and doing a malloc
+	// OR modify create_tri_center to return a pointer, should work either way
+	for( i = 0 ; i < nbTrucks ; ++i) {
+		center.trucks[i] = create_truck(TRUCK_VOLUME, &center);
+	}
+	
+	center.period = period;
+	center.x = x;
+	center.y = y;
+	
+	center.triPoints = triPoints;
+	center.nbTriPoints = nbTriPoint;
+	
+}
 
 Truck create_truck(double volume, TriCenter* center) {
 	Truck truck;
@@ -53,6 +97,7 @@ Truck create_truck(double volume, TriCenter* center) {
 	truck.y = center->y;
 	
 	pthread_mutex_init(&truck.mutex, NULL);
+	pthread_cond_init(&truck.cond, NULL);
 
 	return truck;
 }
@@ -79,9 +124,9 @@ void put_trash_bag(Client* client){
 		pthread_mutex_unlock(&bins[i].mutex);
 	}
 	else{
-		pthread_mutex_lock(&client->point->free->mutex);
-		client->point->free->volume += client->trash->volume;
-		pthread_mutex_unlock(&client->point->free->mutex);	
+		pthread_mutex_lock(&client->point->free.mutex);
+		client->point->free.volume += client->trash->volume;
+		pthread_mutex_unlock(&client->point->free.mutex);	
 	}
 	if (bins->volume * VOLUME_ALERT <= bins->current_volume)
 		//TODO Send signal to its TriPoint
@@ -134,12 +179,41 @@ TrashBag generate_trash(Client* client){
 	return trashBag;
 }
 
+// Send all trucks to clean up the streets ! (thread safe)
 void send_truck(TriCenter* center){
+	int i,n,j;
 	
+	// n is the number of tri points per truck
+	n = center->nbTriPoints / center->nbTrucks;
+	for(i = 0 ; i < center->nbTrucks ; ++i) {
+		// Locking the truck
+		pthread_mutex_lock(&center->trucks[i].mutex);
+	
+		// allocating a decent amount of space, n+1 for safety		
+		center->trucks[i].triPoints = (TriPoint**) malloc( (n + 1) * sizeof(TriPoint*));
+		center->trucks[i].nbTriPoints = n;
+		for(j = 0 ; j < n ; ++j) {
+			// i is the truck and j the tri point
+			center->trucks[i].triPoints[j] = &center->triPoints[j + n * i];
+		}
+	}
+	
+	if (n * center->nbTrucks != center->nbTriPoints) {
+		center->trucks[ center->nbTrucks - 1 ].triPoints[ center->trucks[ center->nbTrucks - 1 ].nbTriPoints ] = &center->triPoints[ center->nbTriPoints - 1 ];
+		center->trucks[ center->nbTrucks - 1 ].nbTriPoints += 1;
+	}
+	
+	// Waking up each truck all at once
+	for( i = 0 ; i < center->nbTrucks ; ++i) {
+		wake_up_truck(&center->trucks[i]);
+		// unlocking the truck
+		pthread_mutex_unlock(&center->trucks[i].mutex);
+	}
 }
 
+// Waking up a sleeping truck (supposedly thread safe)
 void wake_up_truck(Truck* truck){
-
+	pthread_cond_signal(&truck->cond);
 }
 
 void *thread_client(void* data){
@@ -191,8 +265,8 @@ TriPoint findClosestTriPoint(int x, int y){
 // Add a tri point to the specified truck rout (thread safe)
 void add_tri_point_to_truck(TriPoint* point, Truck* truck) {
 	pthread_mutex_lock(&truck->mutex);
-	truck->triPoints[truck->nbTriPoint] = point;
-	truck->nbTriPoint++;
+	truck->triPoints[truck->nbTriPoints] = point;
+	truck->nbTriPoints++;
 	pthread_mutex_unlock(&truck->mutex);
 }
 
@@ -243,7 +317,7 @@ void signal_tri_point_full(TriCenter* center, TriPoint* point) {
 	
 	
 	// Checking if the truck is on the road or not
-	if(truck->nbTriPoint == 0) {
+	if(truck->nbTriPoints == 0) {
 		add_tri_point_to_truck(point, &center->trucks[truck_index]);
 		// Waking the truck
 		wake_up_truck(truck);
@@ -260,7 +334,7 @@ void* thread_truck(void* data) {
 	
 	while(1) {
 		int i=0;
-		for(i = 0 ; i<truck->nbTriPoint ; ++i) {
+		for(i = 0 ; i<truck->nbTriPoints ; ++i) {
 			
 			// We lock the truck for the time of this treatment 
 			pthread_mutex_lock(&truck->mutex);
@@ -305,7 +379,7 @@ void* thread_truck(void* data) {
 			}
 			
 			//Deleting illegal trashes.
-			point->free->current_volume = 0;
+			point->free.current_volume = 0;
 			
 			// Releasing the tri point
 			pthread_mutex_unlock(&point->mutex);
@@ -326,10 +400,10 @@ void* thread_truck(void* data) {
 		sleep(travel_length);
 		
 		// Delete the route
-		truck->nbTriPoint = 0;
+		truck->nbTriPoints = 0;
 		
 		// Waiting for new order
-		wait();
+		pthread_cond_wait(&truck->cond, &truck->mutex);
 		
 	}
 }
