@@ -1,7 +1,12 @@
 #ifndef FUNCTIONS__H
 #define FUNCTIONS__H
 
+#define PERIOD 10 //10sec
+
 #include <pthread.h>
+#include <signal.h>
+#include <stdio.h>
+#include <time.h>
 
 Client create_client(int x, int y);
 
@@ -29,6 +34,7 @@ int compute_distance_squared_Truck_TriPoint(Truck* truck, TriPoint* point);
 int compute_distance_squared(int x1, int y1, int x2, int y2);
 
 int find_closest_truck_from_tri_point(TriCenter* center, TriPoint* point);
+void check_full_tri_point(int sig) ;
 void signal_tri_point_full(TriCenter* center, TriPoint* point);
 void* thread_truck(void* data);
 

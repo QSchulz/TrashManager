@@ -2,12 +2,6 @@
 #include "functions.h"
 #include <math.h>
 
-/**TODO
-   suppression des IPC (V)
-   file de messages + signal (à revoir et à discuter, pas très pratique :/) pour notification entre TriPoint et TriCenter TODO Donut
-   vérifier toutes les X secondes le remplissage des poubelles appartenant à un TriPoint TODO Donut
-*/
-
 Client create_client(int x, int y){
 	Client client;
 	
@@ -17,7 +11,7 @@ Client create_client(int x, int y){
 	client.y = y;		
 	
 	client.point = findClosestTriPoint(x, y);
-	
+	client.numero = numClient++;
 	client.nbPerson = rand()%5+1; //Randomize the number of persons in the family
 	
 	client.period = rand()%4+2; //Period for a recreation of the trashbag. [2;5] seconds
@@ -56,6 +50,8 @@ TriPoint create_tri_point(int x, int y) {
 	point.x = x;
 	point.y = y;
 	
+	point.signal_send = 0;
+	
 	return point;
 }
 
@@ -76,12 +72,14 @@ TriCenter create_tri_center(Truck* trucks, int nbTrucks, int period, int x, int 
 	center.trucks = trucks;
 	center.nbTrucks = nbTrucks;
 	
-	center.period = period;
+	center.period = PERIOD;
 	center.x = x;
 	center.y = y;
 	
 	center.triPoints = triPoints;
 	center.nbTriPoints = nbTriPoint;
+	
+	return center;
 	
 }
 
@@ -117,11 +115,13 @@ void put_trash_bag(Client* client){
 	}
 	if (i<nbBins){
 		bins[i].current_volume += client->trash.volume;
+		printf("Le client %d dépose une poubelle de %fl de type %d dans la poubelle de type %d et de mode %d située aux coordonnées x:%d y:%d grâce au mode %d. Son volume est maintenant de %f.\n", client->numero, client->trash.volume, client->trash.type, bins[i].type, client->point->x, client->point->y, client->mode, bins[i].current_volume);
 		pthread_mutex_unlock(&bins[i].mutex);
 	}
 	else{
 		pthread_mutex_lock(&client->point->free.mutex);
 		client->point->free.volume += client->trash.volume;
+		printf("Le client %d s'est fait avoir, les poubelles sont pleines. Il dépose une poubelle de %fl de type %d devant le point de tri situé aux coordonnées x:%d y:%d. Le volume de déchets illégaux est maintenant de %f.\n", client->numero, client->trash.volume, client->trash.type, client->point->x, client->point->y, client->point->free.volume);
 		pthread_mutex_unlock(&client->point->free.mutex);
 	}
 }	
@@ -178,6 +178,7 @@ void send_truck(TriCenter* center){
 	
 	// n is the number of tri points per truck
 	n = center->nbTriPoints / center->nbTrucks;
+	printf("center->nbTriPoints : %d\n", center->nbTriPoints);
 	for(i = 0 ; i < center->nbTrucks ; ++i) {
 		// Locking the truck
 		pthread_mutex_lock(&center->trucks[i].mutex);
@@ -217,40 +218,75 @@ void *thread_client(void* data){
 		sleep(client->period);
 	}
 }
-/*
-void onAlarm(int sig){
-	send_truck(triCenter);
-	alarm(
-	
-}*/
 
 void* thread_tri_center(void* data){
+	puts("TriCenter");
 	TriCenter* triCenter = (TriCenter*) data;
 	time_t currentTime;
-	time_t start;
-	//TODO Donut
-	//signal(SIGUSR1, checkMessages);
-	//alarm(triCenter->period);
+	time_t start = time(NULL);
+	printf("TPeriod : %d\n", triCenter->period);
+	signal(SIGUSR1, check_full_tri_point);
 	while(1){
 		currentTime = 0;
 		start = time(NULL);
 		
 		do{
+			//printf("usleep(%d)\n",(triCenter->period - currentTime));
 			sleep(triCenter->period - currentTime);
 			currentTime = time(NULL) - start;		
 		}while((int)(currentTime / triCenter->period) == 0);
+		printf("Le centre de tri situé à x:%d y:%d envoie ses camions pour le ramassage quotidien des ordures\n", triCenter->x, triCenter->y);		
 		send_truck(triCenter);
+		printf("Envoi des camions terminé\n");
 	}
 }
 
 void* thread_tri_point(void* data){
-	//TriPoint* triPoint = (TriPoint*) data;
-	//TODO Donut
-	//if (bins[i].volume * VOLUME_ALERT <= bins[i].current_volume){}
-			//TODO Send signal to its TriCenter
-			//Une poubelle est pleine
-	//des ordures illégales sont déposées
-	//pthread_kill(triPoint->pid_TriCenter, SIGUSR1);		
+	puts("TriPoint");
+	TriPoint* triPoint = (TriPoint*) data;
+	
+	while(1) {
+	
+		// Verify that a bin is full
+		int i;
+		for(i = 0 ; i < triPoint->nbBins ; ++i) {
+			if(triPoint->bins[i].current_volume >= triPoint->bins[i].volume) {
+				
+				if(triPoint->signal_send == 0) {
+					// Take the mutex
+					pthread_mutex_lock(&full_tri_points_mutex);
+	
+					// Puting itself in the list
+					full_tri_points[nb_full_tri_points] = triPoint;
+					nb_full_tri_points++;
+				
+					// Releasing the mutex
+					pthread_mutex_unlock(&full_tri_points_mutex);
+				
+					// Sending the signal
+					pthread_kill(triPoint->tid_TriCenter, SIGUSR1);
+			
+					triPoint->signal_send = 1;
+			
+					// TODO: printf
+					printf("Le point de tri de coordonnées x:%d y:%d a une ou plusieurs poubelles pleines et a envoyé une notification aux centres de tri\n",triPoint->x, triPoint->y);
+				}				
+				
+				break;
+			}
+			
+			if(i == triPoint->nbBins - 1) {
+				triPoint->signal_send = 0;
+			}
+		}
+	
+		// Pause the thread 
+		sleep(1);
+	}
+	
+	
+	
+			
 }
 
 TriPoint* findClosestTriPoint(int x, int y){
@@ -307,6 +343,7 @@ int find_closest_truck_from_tri_point(TriCenter* center, TriPoint* point) {
 	
 	int index = 0;
 	int dist_min = compute_distance_squared_Truck_TriPoint(&center->trucks[0], point);
+	pthread_mutex_unlock(&center->trucks[0].mutex);
 	
 	for(i = 1 ; i<center->nbTrucks ; ++i) {
 		int dist = compute_distance_squared_Truck_TriPoint(&center->trucks[i], point);
@@ -322,11 +359,33 @@ int find_closest_truck_from_tri_point(TriCenter* center, TriPoint* point) {
 	return index;
 }
 
+void check_full_tri_point(int sig) {
+	if(sig == SIGUSR1) {
+		
+		pthread_mutex_lock(&full_tri_points_mutex);
+		int i;
+		for(i=0 ; i < nb_full_tri_points ; ++i) {
+			if(full_tri_points[i] != NULL) {
+				printf("Le signal d'un ramassage exceptionnel a été reçu, un camion va vider le point de tri situé à x:%d y:%d\n", full_tri_points[i]->x, full_tri_points[i]->y);
+				signal_tri_point_full(triCenters, full_tri_points[i]);
+				full_tri_points[i] = NULL;
+			}
+		}
+		
+		nb_full_tri_points = 0;
+		
+		pthread_mutex_unlock(&full_tri_points_mutex);
+		signal(SIGUSR1, check_full_tri_point);
+	}
+	
+	return;
+	
+}
+
 // Signal to the specified tri center that the specified tri point is full (thread safe)
 void signal_tri_point_full(TriCenter* center, TriPoint* point) {
 	int truck_index = find_closest_truck_from_tri_point(center, point);
 	Truck* truck = &center->trucks[truck_index];
-	
 	
 	// Checking if the truck is on the road or not
 	if(truck->nbTriPoints == 0) {
@@ -342,12 +401,17 @@ void signal_tri_point_full(TriCenter* center, TriPoint* point) {
 
 // A thread associated with a truck passed in data, (normally thread safe)
 void* thread_truck(void* data) {
+	puts("Truck\n");
 	Truck* truck = (Truck*) data;
 	
 	while(1) {
+		// Waiting for new order
+		pthread_cond_wait(&truck->cond, &truck->mutex);
+		printf("Le camion est sur la route.\n");
+		printf("Il part visiter %d point de tri.\n", truck->nbTriPoints);
 		int i=0;
 		for(i = 0 ; i<truck->nbTriPoints ; ++i) {
-			
+		
 			// We lock the truck for the time of this treatment 
 			pthread_mutex_lock(&truck->mutex);
 			TriPoint* point = truck->triPoints[i];
@@ -356,22 +420,22 @@ void* thread_truck(void* data) {
 			int starty = truck->y;
 			
 			// We take the position of the tri point, stock in temporary variable to release the point
+			
 			pthread_mutex_lock(&point->mutex);
 			int destx = point->x;
 			int desty = point->y;
 			pthread_mutex_unlock(&point->mutex);
-			
+			/*
 			// Get the length of the travel in meters
 			int travel_length = sqrt( (destx - startx) * (destx - startx) + (desty - starty) * (desty - starty) );
 			// Supposing riding at 8m/s
 			travel_length = travel_length / 8;
-			
+			*/
 			// Release the truck
 			pthread_mutex_unlock(&truck->mutex);
 			
 			// posing the truck for the time of the travel
-			sleep(travel_length);
-			
+			sleep(2);
 			// Once arrived we lock again the truck
 			pthread_mutex_lock(&truck->mutex);
 			
@@ -380,9 +444,11 @@ void* thread_truck(void* data) {
 			truck->y = desty;
 			
 			// We lock the bin
+			
 			pthread_mutex_lock(&point->mutex);
 			
 			// Emptying each trash bin
+			printf("Le camion vide le point de tri situé à x:%d y:%d\n", point->x, point->y);
 			int j;
 			for(j = 0 ; j<point->nbBins ; ++j) {
 				pthread_mutex_lock(&point->bins[j].mutex);
@@ -395,6 +461,9 @@ void* thread_truck(void* data) {
 			
 			// Releasing the tri point
 			pthread_mutex_unlock(&point->mutex);
+			
+			// Releasing the truck
+			pthread_mutex_unlock(&truck->mutex);
 			
 			
 		}
@@ -409,13 +478,10 @@ void* thread_truck(void* data) {
 		int travel_length = sqrt( (destx - startx) * (destx - startx) + (desty - starty) * (desty - starty) );
 		// Supposing riding at 8m/s
 		travel_length = travel_length / 8;
-		sleep(travel_length);
+		sleep(2);
 		
 		// Delete the route
 		truck->nbTriPoints = 0;
-		
-		// Waiting for new order
-		pthread_cond_wait(&truck->cond, &truck->mutex);
 		
 	}
 }

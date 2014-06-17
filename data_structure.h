@@ -4,14 +4,14 @@
 #include <stdlib.h>
 
 typedef enum trashtype {
-	WASTE,
+	WASTE=0,
 	GLASS,
 	PAPER,
 	ANY
 } TrashType;
 
 typedef enum mode {
-	KEY,
+	KEY=0,
 	BAC,
 	KEY_BAC
 } Mode;
@@ -46,7 +46,7 @@ typedef struct tripoint {
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
 	
-	//Used for notifications
+	int signal_send;
 	pthread_t tid_TriCenter;
 } TriPoint;
 
@@ -62,6 +62,7 @@ typedef struct triCenter {
 } TriCenter;
 
 typedef struct truck {
+	//unused
 	double volume;
 	
 	struct triCenter* center;
@@ -84,7 +85,8 @@ typedef struct client {
 	
 	int nbPerson;
 	
-	double period;
+	int period;
+	int numero;
 } Client;
 
 //Global lists with their size
@@ -94,7 +96,11 @@ extern int nbTriPoints;
 extern TriCenter* triCenters;
 extern int nbTriCenters;
 
+extern TriPoint** full_tri_points;
+extern int nb_full_tri_points;
+extern pthread_mutex_t full_tri_points_mutex;
 
+extern int numClient;
 #define VOLUME_ALERT 0.8
 #define TRASH_BIN_VOLUME 5000
 #define TRASH_BIN_FREE_VOLUME 10000
