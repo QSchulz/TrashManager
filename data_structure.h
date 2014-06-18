@@ -4,21 +4,20 @@
 #include <stdlib.h>
 
 typedef enum trashtype {
-	WASTE=0,
+	WASTE,
 	GLASS,
 	PAPER,
 	ANY
 } TrashType;
 
 typedef enum mode {
-	KEY=0,
+	KEY,
 	BAC,
 	KEY_BAC
 } Mode;
 
 typedef struct trashbag {
 	double volume;
-
 	TrashType type;
 } TrashBag;
 
@@ -29,78 +28,53 @@ typedef struct trashbin {
 
 	TrashType type;
 	Mode mode;
-	
-	pthread_mutex_t mutex;
-	pthread_cond_t cond;
+
+	pthread_mutex_t* mutex;
 } TrashBin;
 
 typedef struct tripoint {
-	TrashBin* bins;
+	TrashBin** bins;
 
 	int nbBins;
-	
-	TrashBin free;
-	
+
+	TrashBin* free;
+
 	int x, y;
-	
-	pthread_mutex_t mutex;
-	pthread_cond_t cond;
-	
-	int signal_send;
-	pthread_t tid_TriCenter;
+
+	pthread_mutex_t* mutex;
 } TriPoint;
 
 typedef struct triCenter {
-	struct truck* trucks;
-	int nbTrucks;
-	
 	int period;
 	int x, y;
-	
-	TriPoint* triPoints;
-	int nbTriPoints;
-} TriCenter;
 
-typedef struct truck {
-	//unused
-	double volume;
-	
-	struct triCenter* center;
-	
 	TriPoint** triPoints;
 	int nbTriPoints;
-	
-	int x, y;
-	
-	pthread_mutex_t mutex;
-	pthread_cond_t cond;
-} Truck;
+
+	TriPoint* current_point;
+} TriCenter;
 
 typedef struct client {
 	Mode mode;
 
-	TrashBag trash;
+	TrashBag* trash;
+	//currently unused
+	int nbTrash;
 	int x, y;
 	TriPoint* point;
-	
+
 	int nbPerson;
-	
-	int period;
-	int numero;
+
+	double period;
 } Client;
 
 //Global lists with their size
-extern TriPoint* triPoints;
+extern TriPoint** triPoints;
 extern int nbTriPoints;
 
 extern TriCenter* triCenters;
-extern int nbTriCenters;
 
-extern TriPoint** full_tri_points;
-extern int nb_full_tri_points;
-extern pthread_mutex_t full_tri_points_mutex;
 
-extern int numClient;
 #define VOLUME_ALERT 0.8
 #define TRASH_BIN_VOLUME 5000
 #define TRASH_BIN_FREE_VOLUME 10000
